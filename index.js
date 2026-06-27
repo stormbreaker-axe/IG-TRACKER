@@ -159,7 +159,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     await addSubmission(displayName, message.author.id, taskName);
 
-    console.log APPROVED:", displayName, taskName);
+    console.log("🟩 APPROVED:", displayName, taskName);
 
     await updateLeaderboardMessage();
 });
