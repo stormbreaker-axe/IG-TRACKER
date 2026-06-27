@@ -147,44 +147,37 @@ async function getLeaderboard() {
 }
 // ================= UPDATE LEADERBOARD MESSAGE =================
 async function updateLeaderboardMessage() {
-    const leaderboard = await getLeaderboard();
+    if (updatingLeaderboard) return;
 
-    const channel = await client.channels.fetch(LEADERBOARD_CHANNEL_ID);
-
-    let text = "🏆 **LIVE KARMA LEADERBOARD** 🏆\n\n";
-
-    if (leaderboard.length === 0) {
-        text += "No data yet.";
-    } else {
-        leaderboard.slice(0, 10).forEach(([user, score], i) => {
-            text += `**#${i + 1}** ${user} — ${score} karma\n`;
-        });
-    }
+    updatingLeaderboard = true;
 
     try {
-        // ✅ FIRST TIME: create message
+        const leaderboard = await getLeaderboard();
+
+        const channel = await client.channels.fetch(LEADERBOARD_CHANNEL_ID);
+
+        let text = "🏆 **LIVE KARMA LEADERBOARD** 🏆\n\n";
+
+        leaderboard.forEach(([user, score], i) => {
+            text += `**#${i + 1}** ${user} — ${score} karma\n`;
+        });
+
         if (!leaderboardMessageId) {
             const msg = await channel.send(text);
             leaderboardMessageId = msg.id;
         } else {
-            // ✅ NEXT TIMES: edit SAME message
             const msg = await channel.messages.fetch(leaderboardMessageId);
-
-            if (msg) {
-                await msg.edit(text);
-            } else {
-                // fallback if message deleted manually
-                const newMsg = await channel.send(text);
-                leaderboardMessageId = newMsg.id;
-            }
+            await msg.edit(text);
         }
 
         console.log("Leaderboard updated");
-    } catch (err) {
-        console.error("Leaderboard update error:", err);
-    }
-}
 
+    } catch (err) {
+        console.error(err);
+    }
+
+    updatingLeaderboard = false;
+}
 // ================= ADD SUBMISSION =================
 async function addSubmission(username, taskName) {
     const sheet = doc.sheetsByTitle["SUBMISSIONS"];
