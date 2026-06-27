@@ -34,6 +34,32 @@ async function initGoogle() {
 
 // ================= LEADERBOARD CACHE =================
 let leaderboardMessageId = null;
+async function approveSubmission(message) {
+
+    const match = message.content.trim().match(/^#([a-zA-Z0-9-_]+)/);
+    if (!match) return;
+
+    const taskName = match[1];
+
+    const hasAttachment = message.attachments.size > 0;
+    const hasLink = /(https?:\/\/[^\s]+)/i.test(message.content);
+
+    if (!hasAttachment && !hasLink) return;
+
+    const member = await message.guild.members
+        .fetch(message.author.id)
+        .catch(() => null);
+
+    const displayName =
+        member?.displayName || message.author.username;
+
+    await addSubmission(displayName, taskName);
+
+    console.log("✅ Karma awarded for:", displayName, taskName);
+
+    await updateLeaderboardMessage();
+}
+
 async function importOldMessages() {
     const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
 
@@ -200,8 +226,31 @@ async function addSubmission(username, taskName) {
 
 }
 
+client.on('messageReactionAdd', async (reaction, user) => {
+
+    if (user.bot) return;
+
+    if (reaction.emoji.name !== "") return;
+
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+
+    await approveSubmission(reaction.message);
+});
 
 // ================= MESSAGE HANDLER =================
+client.on('messageReactionAdd', async (reaction, user) => {
+
+    if (user.bot) return;
+
+    if (reaction.emoji.name !== "✅") return;
+
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+
+    await approveSubmission(reaction.message);
+});
+
 client.on('messageCreate', async (message) => {
 
     if (message.author.bot) return;
