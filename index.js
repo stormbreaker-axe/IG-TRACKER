@@ -133,35 +133,19 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     if (user.bot) return;
 
-    if (reaction.emoji.name !== "🟩") return;
-
+    // IMPORTANT: resolve partials
     if (reaction.partial) await reaction.fetch();
     if (reaction.message.partial) await reaction.message.fetch();
 
+    const emoji = reaction.emoji.name;
+
+    if (emoji !== "🟩") return;
+
     const message = reaction.message;
 
-    const match = message.content.trim().match(/^#([a-zA-Z0-9-_]+)/);
-    if (!match) return;
+    console.log("🟩 Reaction detected correctly");
 
-    const taskName = match[1];
-
-    const hasAttachment = message.attachments.size > 0;
-    const hasLink = /(https?:\/\/[^\s]+)/i.test(message.content);
-
-    if (!hasAttachment && !hasLink) return;
-
-    const member = await message.guild.members
-        .fetch(message.author.id)
-        .catch(() => null);
-
-    const displayName =
-        member?.displayName || message.author.username;
-
-    await addSubmission(displayName, message.author.id, taskName);
-
-    console.log("🟩 APPROVED:", displayName, taskName);
-
-    await updateLeaderboardMessage();
+    // your approval logic here
 });
 
 // ---------------- STARTUP ----------------
