@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
+const approvedMessages = new Set();
 
 const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
@@ -25,6 +26,32 @@ const client = new Client({
 
 let leaderboardMessageId = null;
 let updating = false;
+async function approveMessage(message) {
+
+    if (approvedMessages.has(message.id)) return;
+    approvedMessages.add(message.id);
+
+    const match = message.content.trim().match(/^#([a-zA-Z0-9-_]+)/);
+    if (!match) return;
+
+    const taskName = match[1];
+
+    const hasAttachment = message.attachments.size > 0;
+    const hasLink = /(https?:\/\/[^\s]+)/i.test(message.content);
+
+    if (!hasAttachment && !hasLink) return;
+
+    const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+
+    const displayName =
+        member?.displayName || message.author.username;
+
+    await addSubmission(displayName, message.author.id, taskName);
+
+    console.log("🟩 APPROVED:", displayName, taskName);
+
+    await updateLeaderboardMessage();
+}
 
 // ---------------- GOOGLE SHEETS ----------------
 
@@ -153,7 +180,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     if (user.bot) return;
 
-    // IMPORTANT: resolve partials
     if (reaction.partial) await reaction.fetch();
     if (reaction.message.partial) await reaction.message.fetch();
 
@@ -161,17 +187,28 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     if (emoji !== "🟩") return;
 
-    const message = reaction.message;
+    console.log("🟩 Reaction detected");
 
-    console.log("🟩 Reaction detected correctly");
-
-    // your approval logic here
+    await approveMessage(reaction.message);
 });
-
 // ---------------- STARTUP ----------------
 
 client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}`);
+
+    const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
+
+    const messages = await channel.messages.fetch({ limit: 100 });
+
+    for (const [, message] of messages) {
+
+        const hasGreen = message.reactions.cache.some(r => r.emoji.name === "🟩");
+
+        if (hasGreen) {
+            console.log("🔄 Processing existing approval:", message.id);
+            await approveMessage(message);
+        }
+    }
 
     await updateLeaderboardMessage();
 });
