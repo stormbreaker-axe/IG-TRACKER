@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const sheetKey = `${message.id}`;
 
 const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
@@ -26,10 +25,58 @@ const client = new Client({
 
 let leaderboardMessageId = null;
 let updating = false;
-async function approveMessage(message) {
 
-    if (approvedMessages.has(message.id)) return;
-    approvedMessages.add(message.id);
+// ---------------- SHEETS ----------------
+
+async function getDoc() {
+    const doc = new GoogleSpreadsheet(SHEET_ID);
+
+    await doc.useServiceAccountAuth({
+        client_email: creds.client_email,
+        private_key: creds.private_key.replace(/\\n/g, '\n')
+    });
+
+    await doc.loadInfo();
+    return doc;
+}
+
+// ---------------- ADD SUBMISSION ----------------
+
+async function addSubmission(username, userId, taskName) {
+    try {
+        const doc = await getDoc();
+
+        const sheet = doc.sheetsByTitle["SUBMISSIONS"];
+        if (!sheet) {
+            console.error("❌ SUBMISSIONS sheet not found");
+            return;
+        }
+
+        await sheet.addRow({
+            USER_ID: userId,
+            USERNAME: username,
+            TASK: taskName,
+            DATE: new Date().toLocaleDateString()
+        });
+
+        console.log("✅ Added:", username, taskName);
+
+    } catch (err) {
+        console.error("❌ Sheet error:", err.message);
+    }
+}
+
+// ---------------- APPROVAL CACHE (PREVENT DUPLICATES) ----------------
+
+const processedMessages = new Set();
+
+// ---------------- APPROVAL FUNCTION ----------------
+
+async function approveMessage(message) {
+    if (!message) return;
+    if (processedMessages.has(message.id)) return;
+
+    processedMessages.add(message.id);
 
     const match = message.content.trim().match(/^#([a-zA-Z0-9-_]+)/);
     if (!match) return;
@@ -53,90 +100,33 @@ async function approveMessage(message) {
     await updateLeaderboardMessage();
 }
 
-// ---------------- GOOGLE SHEETS ----------------
-
-async function loadDoc() {
-    const doc = new GoogleSpreadsheet(SHEET_ID);
-    await doc.useServiceAccountAuth(creds);
-    await doc.loadInfo();
-    return doc;
-}
-
-// ---------------- SUBMISSION STORAGE ----------------
-
-async function addSubmission(username, userId, taskName) {
-    try {
-        const doc = new GoogleSpreadsheet(SHEET_ID);
-
-        await doc.useServiceAccountAuth({
-            client_email: creds.client_email,
-            private_key: creds.private_key.replace(/\\n/g, '\n')
-        });
-
-        await doc.loadInfo();
-
-        const sheet = doc.sheetsByTitle["SUBMISSIONS"];
-
-        if (!sheet) {
-            console.error("❌ SUBMISSIONS sheet not found");
-            return;
-        }
-
-        await sheet.addRow({
-            USER_ID: userId,
-            USERNAME: username,
-            TASK: taskName,
-            DATE: new Date().toLocaleDateString()
-        });
-
-        console.log("✅ SHEET UPDATED");
-
-    } catch (err) {
-        console.error("❌ GOOGLE SHEETS ERROR:", err.response?.data || err.message || err);
-    }
-}
-
-// ---------------- LEADERBOARD LOGIC ----------------
-
-async function getLeaderboard() {
-    const doc = await loadDoc();
-
-    const subSheet = doc.sheetsByTitle["SUBMISSIONS"];
-    const karmaSheet = doc.sheetsByTitle["TASK_KARMA"];
-
-    const submissions = await subSheet.getRows();
-    const rules = await karmaSheet.getRows();
-
-    // build karma map
-    const karmaMap = {};
-    for (const r of rules) {
-        if (!r.HASHTAG) continue;
-        karmaMap[r.HASHTAG.toLowerCase().trim()] = Number(r.KARMA) || 0;
-    }
-
-    const scores = {};
-
-    for (const s of submissions) {
-        const user = s.USERNAME;
-        const task = (s.TASK || "").toLowerCase().trim();
-
-        const karma = karmaMap[task] || 0;
-
-        if (!scores[user]) scores[user] = 0;
-        scores[user] += karma;
-    }
-
-    return Object.entries(scores).sort((a, b) => b[1] - a[1]);
-}
-
-// ---------------- LEADERBOARD UPDATE ----------------
+// ---------------- LEADERBOARD ----------------
 
 async function updateLeaderboardMessage() {
     if (updating) return;
     updating = true;
 
     try {
-        const leaderboard = await getLeaderboard();
+        const doc = await getDoc();
+
+        const sheet = doc.sheetsByTitle["SUBMISSIONS"];
+        const rows = await sheet.getRows();
+
+        const scores = {};
+
+        for (const r of rows) {
+            const user = r.USERNAME;
+            const task = (r.TASK || "").toLowerCase().trim();
+
+            if (!scores[user]) scores[user] = 0;
+
+            // simple karma = 1 per approved submission (safe fallback)
+            scores[user] += 1;
+        }
+
+        const leaderboard = Object.entries(scores)
+            .sort((a, b) => b[1] - a[1]);
+
         const channel = await client.channels.fetch(LEADERBOARD_CHANNEL_ID);
 
         let text = "🏆 **LIVE KARMA LEADERBOARD** 🏆\n\n";
@@ -154,16 +144,15 @@ async function updateLeaderboardMessage() {
         }
 
     } catch (err) {
-        console.error("Leaderboard error:", err);
+        console.error("Leaderboard error:", err.message);
     }
 
     updating = false;
 }
 
-// ---------------- MESSAGE DETECTION (NO KARMA HERE) ----------------
+// ---------------- MESSAGE CHECK (NO KARMA HERE) ----------------
 
 client.on('messageCreate', async (message) => {
-
     if (message.author.bot) return;
     if (message.channel.id !== SUBMISSION_CHANNEL_ID) return;
 
@@ -175,62 +164,53 @@ client.on('messageCreate', async (message) => {
 
     if (!hasAttachment && !hasLink) return;
 
-    console.log("🕒 Pending submission:", message.author.username);
+    console.log("📩 Submission detected:", message.author.username);
 });
 
-// ---------------- APPROVAL SYSTEM ----------------
+// ---------------- REACTION APPROVAL ----------------
 
 client.on('messageReactionAdd', async (reaction, user) => {
+    try {
+        if (user.bot) return;
 
-    if (user.bot) return;
+        if (reaction.partial) await reaction.fetch();
+        if (reaction.message.partial) await reaction.message.fetch();
 
-    if (reaction.partial) await reaction.fetch();
-    if (reaction.message.partial) await reaction.message.fetch();
+        const emoji = reaction.emoji.name;
 
-    const emoji = reaction.emoji.name;
+        if (emoji !== "🟩") return;
 
-    if (emoji !== "🟩") return;
+        console.log("🟩 Reaction detected");
 
-    console.log("🟩 Reaction detected");
+        await approveMessage(reaction.message);
 
-    await approveMessage(reaction.message);
+    } catch (err) {
+        console.error("Reaction error:", err.message);
+    }
 });
-// ---------------- STARTUP ----------------
+
+// ---------------- LOAD EXISTING APPROVALS ON START ----------------
 
 client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
-    const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
-
-    let lastId;
-
-    while (true) {
-        const options = { limit: 50 };
-        if (lastId) options.before = lastId;
-
-        const messages = await channel.messages.fetch(options);
-        if (!messages.size) break;
+    try {
+        const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
+        const messages = await channel.messages.fetch({ limit: 50 });
 
         for (const [, message] of messages) {
+            const hasGreen = message.reactions.cache.some(r => r.emoji.name === "🟩");
 
-            try {
-                await message.fetch();
-
-                const hasGreen = message.reactions.cache.some(r => r.emoji.name === "🟩");
-
-                if (hasGreen) {
-                    await approveMessage(message);
-                }
-
-            } catch (err) {
-                console.log("Skip message error:", err.message);
+            if (hasGreen) {
+                await approveMessage(message);
             }
         }
 
-        lastId = messages.last().id;
-    }
+        await updateLeaderboardMessage();
 
-    await updateLeaderboardMessage();
+    } catch (err) {
+        console.error("Startup scan error:", err.message);
+    }
 });
 
 client.login(BOT_TOKEN);
