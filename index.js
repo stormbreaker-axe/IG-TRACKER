@@ -107,25 +107,33 @@ async function getLeaderboard() {
     const submissionSheet = doc.sheetsByTitle["SUBMISSIONS"];
     const ruleSheet = doc.sheetsByTitle["TASK_KARMA"];
 
-    if (!submissionSheet || !ruleSheet) {
-        throw new Error("Missing SUBMISSIONS or TASK_KARMA sheet");
-    }
-
     const submissions = await submissionSheet.getRows();
     const rules = await ruleSheet.getRows();
 
-    // build rule map
+    console.log("RULE COUNT:", rules.length);
+    console.log("SUB COUNT:", submissions.length);
+
+    // build karma map (NORMALIZED)
     const karmaMap = {};
+
     for (const r of rules) {
-        karmaMap[r.HASHTAG] = Number(r.KARMA);
+        if (!r.HASHTAG) continue;
+
+        const key = r.HASHTAG.toString().trim().toLowerCase();
+        const value = Number(r.KARMA) || 0;
+
+        karmaMap[key] = value;
     }
 
-    // calculate scores
+    console.log("KARMA MAP:", karmaMap);
+
     const scores = {};
 
     for (const s of submissions) {
         const user = s.USERNAME;
-        const task = s.TASK;
+        if (!user) continue;
+
+        const task = (s.TASK || "").toString().trim().toLowerCase();
 
         const karma = karmaMap[task] || 0;
 
@@ -133,9 +141,10 @@ async function getLeaderboard() {
         scores[user] += karma;
     }
 
+    console.log("SCORES:", scores);
+
     return Object.entries(scores).sort((a, b) => b[1] - a[1]);
 }
-
 // ================= UPDATE LEADERBOARD MESSAGE =================
 async function updateLeaderboardMessage() {
     const leaderboard = await getLeaderboard();
