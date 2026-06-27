@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const creds = require('./credentials.json');
+const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
 console.log('Bot starting...');
 
