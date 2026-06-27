@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const approvedMessages = new Set();
+const sheetKey = `${message.id}`;
 
 const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
