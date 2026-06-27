@@ -147,36 +147,43 @@ async function getLeaderboard() {
 }
 // ================= UPDATE LEADERBOARD MESSAGE =================
 async function updateLeaderboardMessage() {
-    if (updatingLeaderboard) return;
+    const leaderboard = await getLeaderboard();
 
-    updatingLeaderboard = true;
+    const channel = await client.channels.fetch(LEADERBOARD_CHANNEL_ID);
+
+    let text = "🏆 **LIVE KARMA LEADERBOARD** 🏆\n\n";
+
+    leaderboard.forEach(([user, score], i) => {
+        text += `**#${i + 1}** ${user} — ${score} karma\n`;
+    });
 
     try {
-        const leaderboard = await getLeaderboard();
-
-        const channel = await client.channels.fetch(LEADERBOARD_CHANNEL_ID);
-
-        let text = "🏆 **LIVE KARMA LEADERBOARD** 🏆\n\n";
-
-        leaderboard.forEach(([user, score], i) => {
-            text += `**#${i + 1}** ${user} — ${score} karma\n`;
-        });
-
+        // FIRST TIME ONLY
         if (!leaderboardMessageId) {
             const msg = await channel.send(text);
             leaderboardMessageId = msg.id;
-        } else {
-            const msg = await channel.messages.fetch(leaderboardMessageId);
-            await msg.edit(text);
+
+            console.log("Created leaderboard message:", leaderboardMessageId);
+            return;
         }
 
-        console.log("Leaderboard updated");
+        // ALWAYS EDIT SAME MESSAGE
+        const msg = await channel.messages.fetch(leaderboardMessageId);
+
+        if (msg) {
+            await msg.edit(text);
+            console.log("Edited leaderboard message");
+        } else {
+            // fallback (only if deleted manually)
+            const newMsg = await channel.send(text);
+            leaderboardMessageId = newMsg.id;
+
+            console.log("Recreated leaderboard message");
+        }
 
     } catch (err) {
-        console.error(err);
+        console.error("Leaderboard error:", err);
     }
-
-    updatingLeaderboard = false;
 }
 // ================= ADD SUBMISSION =================
 async function addSubmission(username, taskName) {
