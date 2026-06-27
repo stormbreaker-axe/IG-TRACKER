@@ -38,15 +38,31 @@ async function loadDoc() {
 // ---------------- SUBMISSION STORAGE ----------------
 
 async function addSubmission(username, userId, taskName) {
-    const doc = await loadDoc();
+
+    const doc = new GoogleSpreadsheet(SHEET_ID);
+
+    await doc.useServiceAccountAuth({
+        client_email: creds.client_email,
+        private_key: creds.private_key.replace(/\\n/g, '\n')
+    });
+
+    await doc.loadInfo();
+
     const sheet = doc.sheetsByTitle["SUBMISSIONS"];
+
+    if (!sheet) {
+        console.error("❌ SUBMISSIONS sheet not found");
+        return;
+    }
 
     await sheet.addRow({
         USER_ID: userId,
         USERNAME: username,
-        TASK: taskName.toLowerCase(),
+        TASK: taskName,
         DATE: new Date().toLocaleDateString()
     });
+
+    console.log("✅ ROW ADDED SUCCESSFULLY");
 }
 
 // ---------------- LEADERBOARD LOGIC ----------------
