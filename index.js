@@ -133,7 +133,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     if (user.bot) return;
 
-    if (reaction.emoji.name !== "🟩") return;
+    if (reaction.emoji.name !== "✅") return;
 
     if (reaction.partial) await reaction.fetch();
     if (reaction.message.partial) await reaction.message.fetch();
@@ -159,7 +159,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     await addSubmission(displayName, message.author.id, taskName);
 
-    console.log("🟩 APPROVED:", displayName, taskName);
+    console.log("✅ APPROVED:", displayName, taskName);
 
     await updateLeaderboardMessage();
 });
