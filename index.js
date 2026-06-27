@@ -202,16 +202,32 @@ client.once('clientReady', async () => {
 
     const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
 
-    const messages = await channel.messages.fetch({ limit: 100 });
+    let lastId;
 
-    for (const [, message] of messages) {
+    while (true) {
+        const options = { limit: 50 };
+        if (lastId) options.before = lastId;
 
-        const hasGreen = message.reactions.cache.some(r => r.emoji.name === "🟩");
+        const messages = await channel.messages.fetch(options);
+        if (!messages.size) break;
 
-        if (hasGreen) {
-            console.log("🔄 Processing existing approval:", message.id);
-            await approveMessage(message);
+        for (const [, message] of messages) {
+
+            try {
+                await message.fetch();
+
+                const hasGreen = message.reactions.cache.some(r => r.emoji.name === "🟩");
+
+                if (hasGreen) {
+                    await approveMessage(message);
+                }
+
+            } catch (err) {
+                console.log("Skip message error:", err.message);
+            }
         }
+
+        lastId = messages.last().id;
     }
 
     await updateLeaderboardMessage();
