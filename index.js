@@ -25,6 +25,7 @@ const client = new Client({
 
 let leaderboardMessageId = null;
 let updating = false;
+const processedMessages = new Set();
 
 // ---------------- SHEETS ----------------
 
@@ -62,20 +63,16 @@ async function addSubmission(username, userId, taskName) {
         console.log("✅ Added:", username, taskName);
 
     } catch (err) {
-        console.error("❌ Sheet error:", err.message);
+        console.error("❌ addSubmission error:", err.message);
     }
 }
 
-// ---------------- APPROVAL CACHE (PREVENT DUPLICATES) ----------------
-
-const processedMessages = new Set();
-
-// ---------------- APPROVAL FUNCTION ----------------
+// ---------------- APPROVAL ----------------
 
 async function approveMessage(message) {
     if (!message) return;
-    if (processedMessages.has(message.id)) return;
 
+    if (processedMessages.has(message.id)) return;
     processedMessages.add(message.id);
 
     const match = message.content.trim().match(/^#([a-zA-Z0-9-_]+)/);
@@ -90,8 +87,7 @@ async function approveMessage(message) {
 
     const member = await message.guild.members.fetch(message.author.id).catch(() => null);
 
-    const displayName =
-        member?.displayName || message.author.username;
+    const displayName = member?.displayName || message.author.username;
 
     await addSubmission(displayName, message.author.id, taskName);
 
@@ -109,19 +105,31 @@ async function updateLeaderboardMessage() {
     try {
         const doc = await getDoc();
 
-        const sheet = doc.sheetsByTitle["SUBMISSIONS"];
-        const rows = await sheet.getRows();
+        const subSheet = doc.sheetsByTitle["SUBMISSIONS"];
+        const karmaSheet = doc.sheetsByTitle["TASK_KARMA"];
 
+        const submissions = await subSheet.getRows();
+        const rules = await karmaSheet.getRows();
+
+        // build karma map
+        const karmaMap = {};
+
+        for (const r of rules) {
+            const key = (r.HASHTAG || "").toLowerCase().trim();
+            karmaMap[key] = Number(r.KARMA) || 0;
+        }
+
+        // calculate scores
         const scores = {};
 
-        for (const r of rows) {
-            const user = r.USERNAME;
-            const task = (r.TASK || "").toLowerCase().trim();
+        for (const s of submissions) {
+            const user = s.USERNAME;
+            const task = (s.TASK || "").toLowerCase().trim();
+
+            const karma = karmaMap[task] || 0;
 
             if (!scores[user]) scores[user] = 0;
-
-            // simple karma = 1 per approved submission (safe fallback)
-            scores[user] += 1;
+            scores[user] += karma;
         }
 
         const leaderboard = Object.entries(scores)
@@ -150,7 +158,7 @@ async function updateLeaderboardMessage() {
     updating = false;
 }
 
-// ---------------- MESSAGE CHECK (NO KARMA HERE) ----------------
+// ---------------- MESSAGE CHECK ----------------
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -180,8 +188,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
         if (emoji !== "🟩") return;
 
-        console.log("🟩 Reaction detected");
-
         await approveMessage(reaction.message);
 
     } catch (err) {
@@ -189,13 +195,14 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
-// ---------------- LOAD EXISTING APPROVALS ON START ----------------
+// ---------------- STARTUP SCAN ----------------
 
 client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
     try {
         const channel = await client.channels.fetch(SUBMISSION_CHANNEL_ID);
+
         const messages = await channel.messages.fetch({ limit: 50 });
 
         for (const [, message] of messages) {
@@ -209,7 +216,7 @@ client.once('clientReady', async () => {
         await updateLeaderboardMessage();
 
     } catch (err) {
-        console.error("Startup scan error:", err.message);
+        console.error("Startup error:", err.message);
     }
 });
 
