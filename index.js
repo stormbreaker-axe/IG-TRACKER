@@ -16,7 +16,11 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions
     ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.Reaction
+    ]
 });
 
 let leaderboardMessageId = null;
