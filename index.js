@@ -65,31 +65,35 @@ async function loadDoc() {
 // ---------------- SUBMISSION STORAGE ----------------
 
 async function addSubmission(username, userId, taskName) {
+    try {
+        const doc = new GoogleSpreadsheet(SHEET_ID);
 
-    const doc = new GoogleSpreadsheet(SHEET_ID);
+        await doc.useServiceAccountAuth({
+            client_email: creds.client_email,
+            private_key: creds.private_key.replace(/\\n/g, '\n')
+        });
 
-    await doc.useServiceAccountAuth({
-        client_email: creds.client_email,
-        private_key: creds.private_key.replace(/\\n/g, '\n')
-    });
+        await doc.loadInfo();
 
-    await doc.loadInfo();
+        const sheet = doc.sheetsByTitle["SUBMISSIONS"];
 
-    const sheet = doc.sheetsByTitle["SUBMISSIONS"];
+        if (!sheet) {
+            console.error("❌ SUBMISSIONS sheet not found");
+            return;
+        }
 
-    if (!sheet) {
-        console.error("❌ SUBMISSIONS sheet not found");
-        return;
+        await sheet.addRow({
+            USER_ID: userId,
+            USERNAME: username,
+            TASK: taskName,
+            DATE: new Date().toLocaleDateString()
+        });
+
+        console.log("✅ SHEET UPDATED");
+
+    } catch (err) {
+        console.error("❌ GOOGLE SHEETS ERROR:", err.response?.data || err.message || err);
     }
-
-    await sheet.addRow({
-        USER_ID: userId,
-        USERNAME: username,
-        TASK: taskName,
-        DATE: new Date().toLocaleDateString()
-    });
-
-    console.log("✅ ROW ADDED SUCCESSFULLY");
 }
 
 // ---------------- LEADERBOARD LOGIC ----------------
